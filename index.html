@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Juego de Milan</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.js"></script>
+</head>
+<body>
+  <script>
+    const config = {
+      type: Phaser.AUTO,
+      width: 1024,  // ancho del mapa (dos habitaciones lado a lado)
+      height: 768,  // alto del mapa (dos habitaciones arriba y abajo)
+      physics: {
+        default: 'arcade',
+        arcade: {
+          debug: false
+        }
+      },
+      scene: {
+        preload: preload,
+        create: create,
+        update: update
+      }
+    };
+
+    const game = new Phaser.Game(config);
+
+    let player, cursors, sombra;
+    let globos, objetos;
+    let scoreText, timerText;
+    let globosRecogidos = 0;
+    let objetosRecogidos = 0;
+    let tiempoRestante = 25;
+    let gameOver = false;
+
+    function preload() {
+      // Aquí deberías cargar tus imágenes
+      this.load.image('mapa', 'img/mapa.png'); // tu imagen del mapa
+      this.load.image('globo', 'img/globo.png');
+      this.load.image('mesa', 'img/mesa.png');
+      this.load.image('objeto', 'img/gorro.png');
+      this.load.image('sombra', 'img/sombra.png');
+      this.load.spritesheet('milan', 'img/milan.png', { frameWidth: 500, frameHeight: 100 });
+    }
+
+    function create() {
+      // Fondo grande con las 4 habitaciones
+      this.add.image(512, 384, 'mapa').setScale(1);
+
+      // Jugador
+      player = this.physics.add.sprite(100, 400, 'milan').setScale(0.5); // Milan más pequeño
+      player.setCollideWorldBounds(true);
+
+      // Sombra
+      sombra = this.physics.add.sprite(800, 600, 'sombra').setScale(0.4); // Sombra más pequeña
+      sombra.setCollideWorldBounds(true);
+      sombra.setVelocity(150, 150);
+      sombra.setBounce(1, 1);
+
+      // Globos (5 en total)
+      globos = this.physics.add.group();
+      let posicionesGlobos = [
+        { x: 250, y: 200 },
+        { x: 700, y: 150 },
+        { x: 200, y: 550 },
+        { x: 800, y: 500 },
+        { x: 500, y: 350 }
+      ];
+      posicionesGlobos.forEach(pos => globos.create(pos.x, pos.y, 'globo').setScale(0.5)); // Globos más pequeños
+
+      // Objetos secundarios (8 en total)
+      objetos = this.physics.add.group();
+      let posicionesObjetos = [
+        { x: 100, y: 100 },
+        { x: 400, y: 250 },
+        { x: 600, y: 250 },
+        { x: 900, y: 250 },
+        { x: 150, y: 700 },
+        { x: 350, y: 600 },
+        { x: 700, y: 600 },
+        { x: 850, y: 700 }
+      ];
+      posicionesObjetos.forEach(pos => {
+        let obj = objetos.create(pos.x, pos.y, 'objeto').setScale(0.4); // Gorros más pequeños
+        obj.recogido = false;
+      });
+
+      // Colisiones
+      this.physics.add.overlap(player, globos, recogerGlobo, null, this);
+      this.physics.add.overlap(player, sombra, finalTriste, null, this);
+
+      // Teclado
+      cursors = this.input.keyboard.createCursorKeys();
+      teclaE = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+
+      // Texto
+      scoreText = this.add.text(16, 16, 'Globos: 0/5 | Objetos: 0/8', { fontSize: '24px', fill: '#fff' });
+      timerText = this.add.text(16, 50, 'Tiempo: 90', { fontSize: '24px', fill: '#fff' });
+
+      // Temporizador
+      this.time.addEvent({
+        delay: 1000,
+        callback: () => {
+          if (!gameOver) {
+            tiempoRestante--;
+            timerText.setText('Tiempo: ' + tiempoRestante);
+            if (tiempoRestante <= 0) {
+              finalTiempo(this);
+            }
+          }
+        },
+        loop: true
+      });
+    }
+
+    function update() {
+      if (gameOver) return;
+
+      player.setVelocity(0);
+
+      if (cursors.left.isDown) {
+        player.setVelocityX(-160);
+      } else if (cursors.right.isDown) {
+        player.setVelocityX(160);
+      }
+
+      if (cursors.up.isDown) {
+        player.setVelocityY(-160);
+      } else if (cursors.down.isDown) {
+        player.setVelocityY(160);
+      }
+
+      // Recoger objetos manualmente con E
+      objetos.children.iterate(obj => {
+        if (!obj.recogido && Phaser.Math.Distance.Between(player.x, player.y, obj.x, obj.y) < 40) {
+          if (Phaser.Input.Keyboard.JustDown(teclaE)) {
+            obj.recogido = true;
+            obj.disableBody(true, true);
+            objetosRecogidos++;
+            actualizarTexto();
+          }
+        }
+      });
+    }
+
+    function recogerGlobo(player, globo) {
+      globo.disableBody(true, true);
+      globosRecogidos++;
+      actualizarTexto();
+    }
+
+    function actualizarTexto() {
+      scoreText.setText('Globos: ' + globosRecogidos + '/5 | Objetos: ' + objetosRecogidos + '/8');
+
+      // Final feliz
+      if (globosRecogidos === 5 && objetosRecogidos === 8) {
+        scoreText.setText("🎉 Final Feliz: 4 niños fueron a la fiesta 🎉");
+        gameOver = true;
+        // Espera un frame antes de pausar la escena para que el texto se muestre
+        setTimeout(() => { 
+          // 'this' no está disponible aquí, así que pausamos la escena globalmente
+          game.scene.scenes[0].scene.pause();
+        }, 100);
+      }
+    }
+
+    function finalTiempo(scene) {
+      gameOver = true;
+      scene.scene.pause();
+      if (objetosRecogidos < 8) {
+        scoreText.setText("😢 Nadie vino a la fiesta");
+      } else if (globosRecogidos >= 5) {
+        scoreText.setText("🎈 Final Medio: hiciste la fiesta solo");
+      }
+    }
+
+    function finalTriste(player, sombra) {
+      gameOver = true;
+      this.scene.pause();
+      scoreText.setText("😭 La sombra atrapó a Milan");
+    }
+  </script>
+</body>
+</html>
